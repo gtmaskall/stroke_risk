@@ -1,0 +1,203 @@
+---
+title: "Stroke data EDA"
+author: "Guy Maskall"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This document downloads and performs an initial view of a 
+[stroke dataset](https://www.kaggle.com/asaumya/healthcare-dataset-stroke-data).
+
+```{r read}
+stroke <- read_csv("train_2v.csv")
+stroke %>% glimpse
+```
+
+## Initial data QA
+
+Check id is unique and for any missing values.
+
+### Uniqueness of ID
+
+```{r data_quality_check}
+stroke %>%
+    count(id) %>%
+    filter(n > 1)
+stroke <- stroke %>% select(-id)
+```
+
+### Check for NA
+
+Do any features have any NA?
+
+```{r na_check}
+# summarise_all soon to be superceded in dplyr 1.0.0
+stroke %>% 
+    summarise_all(~sum(is.na(.))) %>%
+    t
+```
+
+We have some missing bmi and quite a lot of missing smoking_status.
+Is there any obvious pattern in the missing values, or relationship
+between the instances?
+
+```{r na_patterns}
+stroke %>% 
+    mutate(bmi_na = if_else(is.na(bmi), "yes", "no")) %>% 
+    filter(bmi_na == "yes" | is.na(smoking_status)) %>% 
+    group_by(bmi_na) %>% 
+    count(smoking_status)
+```
+
+From the above, probably the missing BMI values are missing at random,
+certainly with respect to smoking,
+seeing as they're broadly evenly distributed with smoking status.
+The largest single group of missing values is that for smoking status
+(where BMI is not missing).
+
+## Stroke and smoking
+
+We saw above that most of the missing values are in the smoking status
+column. How does this seem to relate to stroke?
+
+```{r smoking_stroke}
+stroke %>% 
+    count(smoking_status, stroke) %>% 
+    pivot_wider(names_from=stroke, values_from=n) %>% 
+    mutate(stroke_pc = 100*`1`/`0`)
+```
+
+From the above, we see that *smokes* and *never smoked* have a similar
+rate of incidence of stroke, *formerly smoked* seems a bit higher,
+and the *NA* smoking status group a bit lower. On the face of it, there
+are some curious things here. How does it makes sense that "formerly
+smoked" has a higher incidence of stroke than *smokes*, for example?
+Could there be other factors involved, for example people forced to
+give up smoking because of another health issue or perhaps taking
+up unhealthy eating habits to compensate for no longer smoking?
+
+Do other stuff first to check distributions, but undersampling majority
+class repeatedly generates some consistent results wrt age and may
+implicate smoking, depending on the composition of the groups.
+```{r initial_glm}
+set.seed(47)
+complete_cases <- stroke %>% 
+    filter(complete.cases(.))
+run_glm <- function() {
+    glm(stroke ~ ., family=gaussian, complete_cases %>% 
+            group_by(stroke) %>%  sample_n(548)) %>% 
+    summary
+}
+
+print(run_glm())
+print(run_glm())
+print(run_glm())
+
+```
+
+We repeated the undersampling a couple of times above because we'd
+noticed some variability in the results for different samples drawn
+from the majority class. Age is pretty consistently strongly 
+significant. This is no great surprise for stroke risk. Hypertension
+and heart disease, and particularly average glucose level, are also
+heavily implicated. The signs of their coefficients are all intuitive
+as well; they are positive contributors to stroke risk.
+
+We should pause here before continuing to dive into inference.
+We don't know how the data were sampled and we have multiple
+potentially confounding variables, especially categorical ones.
+Hypertension is binary, as is heart disease, and themselves
+are imbalanced:
+
+```{r hypertension_heart_imbalance}
+stroke %>% count(hypertension)
+stroke %>% count(heart_disease)
+```
+
+We have some encouraging, and plausible, patterns, but
+we should remember the words of Ronald Fisher:
+
+> To consult the statistician after an experiment is finished is 
+> often merely to ask him to conduct a post mortem examination. 
+> He can perhaps say what the experiment died of.
+
+## Stroke and age
+
+The relationship between stroke risk and age is clear in the
+histograms below:
+
+```{r age_stroke_hist}
+stroke %>% 
+    filter(gender != "Other") %>% 
+    ggplot() + 
+    geom_histogram(aes(x = age, fill = stroke==1)) + 
+    facet_wrap(~gender) +
+    labs(fill="Stroke")
+```
+
+We have more women than men, perhaps up to twice as many. The age
+distribution for men is fairly flat, whereas for women there seem to
+be more weight in the middle but fairly symmetric. The increasing
+prevalence of stroke with age is clear.
+
+## Age and smoking
+
+Now we return to looking at smoking status. We suggested above that
+there might be an occasional sign of a relationship between smoking
+status and stroke, but we saw a very clear signal that stroke risk
+was age related. Is there a relationship between age and smoking
+status?
+
+```{r age_smoking}
+stroke %>% 
+    ggplot() + 
+    geom_density(aes(x = age, colour = smoking_status)) +
+    labs(title="Age distribution with smoking status",
+         subtitle="(full dataset)")
+```
+
+The distributions above contain much detail we can now put into
+perspective. The missing values for smoking status are clearly
+dominated by children. This makes total sense. It's quite
+intuitive that the data pertaining to children did not include
+a smoking status. This also means that simply omitting samples
+missing a smoking status is fundamentally flawed because this is
+to greatly bias the data away from younger people. If the desire
+was to model stroke risk only for adults, that's one thing, but then
+this should be explicitly done on age, not accidentally by smoking
+status.
+
+We can see another clear pattern as well. The category of ex-smokers
+("formerly smoked") is heavily weighted to older ages. Again, this
+is an intuitive result given a moment's thought. In order to be a
+former smoker, one must first have been a smoker. A 20 year old has
+had only a few potential smoking years, whereas a 60 year old has
+many years of opportunity to be a smoker before giving up.
+
+The young, below the early twenties, who have never smoked,
+dominate those who do smoke. This effect alone would bias
+the group who've never smoked to be younger, and so at less
+age-related risk of stroke. Having said that, both the
+"never smoked" and "formerly smoked" groups have an uptick at
+the oldest ages that is lacking in the "smokes" group. This
+could perhaps be a survival bias. It's not impossible that
+the suppression of the oldest ages from the smoking group
+might even make smoking appear protective of a stroke in some
+cases; the truth, of course, would be closer to the fact that
+smokers die of smoking-related disease before the stroke
+risk ramps up.
+
+In short, there seem some powerful interactions between age
+and smoking status.
+
+## Can we model missing smoking_status values?
+
+Model age by smoking (balance for smoking status)
+And can we drive glmnet on this data?
