@@ -83,16 +83,23 @@ Could there be other factors involved, for example people forced to
 give up smoking because of another health issue or perhaps taking
 up unhealthy eating habits to compensate for no longer smoking?
 
-Do other stuff first to check distributions, but undersampling majority
+Undersampling the majority
 class repeatedly generates some consistent results wrt age and may
 implicate smoking, depending on the composition of the groups.
+
+### Modeling stroke risk using all available features
+
+We balance the dataset, which means undersampling the
+non-stroke group, and perform logistic regression.
+
 ```{r initial_glm}
 set.seed(47)
 complete_cases <- stroke %>% 
     filter(complete.cases(.))
 run_glm <- function() {
     glm(stroke ~ ., family=gaussian, complete_cases %>% 
-            group_by(stroke) %>%  sample_n(548)) %>% 
+            group_by(stroke) %>%  
+            sample_n(min(group_size(.)))) %>% 
     summary
 }
 
@@ -107,19 +114,16 @@ noticed some variability in the results for different samples drawn
 from the majority class. Age is pretty consistently strongly 
 significant. This is no great surprise for stroke risk. Hypertension
 and heart disease, and particularly average glucose level, are also
-heavily implicated. The signs of their coefficients are all intuitive
+frequently implicated. The signs of their coefficients are all intuitive
 as well; they are positive contributors to stroke risk.
 
 We should pause here before continuing to dive into inference.
 We don't know how the data were sampled and we have multiple
 potentially confounding variables, especially categorical ones.
-Hypertension is binary, as is heart disease, and themselves
-are imbalanced:
-
-```{r hypertension_heart_imbalance}
-stroke %>% count(hypertension)
-stroke %>% count(heart_disease)
-```
+We should stress that we are still exploring potential relationships
+amongst the variables, rather than attempting a rigorous statistical
+inference. There is a hint that smoking may be a risk factor for
+stroke.
 
 We have some encouraging, and plausible, patterns, but
 we should remember the words of Ronald Fisher:
@@ -127,6 +131,16 @@ we should remember the words of Ronald Fisher:
 > To consult the statistician after an experiment is finished is 
 > often merely to ask him to conduct a post mortem examination. 
 > He can perhaps say what the experiment died of.
+
+
+
+Hypertension is binary, as is heart disease, and themselves
+are imbalanced:
+
+```{r hypertension_heart_imbalance}
+stroke %>% count(hypertension)
+stroke %>% count(heart_disease)
+```
 
 ## Stroke and age
 
@@ -196,6 +210,58 @@ risk ramps up.
 
 In short, there seem some powerful interactions between age
 and smoking status.
+
+Can we further illustrate the linkage between age and
+smoking status wrt stroke risk?
+
+Firstly, with a bit of trial and error, we found a partitioning
+of the data that suggested a mildly significant effect of smoking:
+
+```{r age_smoke_link}
+set.seed(100)
+cc_balanced <- complete_cases %>% 
+    group_by(stroke) %>% 
+    sample_n(min(group_size(.)))
+glm(stroke ~ age + smoking_status, 
+    family=gaussian, cc_balanced) %>% 
+    summary
+```
+
+So taking just age and smoking status (from the complete cases
+data) we see a slight suggestion of a positive risk from being
+a smoker compared to being a former smoker. Although the p-value
+is quite high, the sign associated with having never smoked is
+negative, which is in the intuitive direction, but the data really
+can't be said to provide sufficient evidence for this.
+
+```{r age_smoke_link_interaction}
+set.seed(100)
+cc_balanced <- complete_cases %>% 
+    group_by(stroke) %>% 
+    sample_n(min(group_size(.)))
+glm(stroke ~ age * smoking_status, 
+    family=gaussian, cc_balanced) %>% 
+    summary
+```
+
+By now including interactions between age and smoking status,
+the p-values associated with smoking are huge. Whilst we may
+intuit that smoking could be a stroke risk, my gut feeling is
+that in this dataset, smoking status is largely acting as a 
+proxy for age. It is quite possible that smoking status has
+some predictive power in addition to other features, but
+we have to admit we don't really see any evidence of it
+in this exploration. Given the quantity of samples missing
+a smoking status, we should be far more comfortable dropping
+this feature than dropping the samples with missing smoking
+status.
+
+Could we fill in the missing smoking status values?
+We might certainly expect to mark all children under the age
+of ten as *never smoked* and expect to usually being correct.
+Sadly, we couldn't assume we'd be 100% right here! But at what
+age would we expect people to take up smoking? Can we predict
+smokers from other features?
 
 ## Can we model missing smoking_status values?
 
