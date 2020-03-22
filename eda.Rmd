@@ -199,8 +199,8 @@ The young, below the early twenties, who have never smoked,
 dominate those who do smoke. This effect alone would bias
 the group who've never smoked to be younger, and so at less
 age-related risk of stroke. Having said that, both the
-"never smoked" and "formerly smoked" groups have an uptick at
-the oldest ages that is lacking in the "smokes" group. This
+*never smoked* and *formerly smoked* groups have an uptick at
+the oldest ages that is lacking in the *smokes* group. This
 could perhaps be a survival bias. It's not impossible that
 the suppression of the oldest ages from the smoking group
 might even make smoking appear protective of a stroke in some
@@ -248,22 +248,31 @@ By now including interactions between age and smoking status,
 the p-values associated with smoking are huge. Whilst we may
 intuit that smoking could be a stroke risk, my gut feeling is
 that in this dataset, smoking status is largely acting as a 
-proxy for age. It is quite possible that smoking status has
+proxy for age. We can demonstrate this another way by modelling
+age on smoking status:
+
+```{r age_from_smoking_model}
+set.seed(100)
+glm(age ~ smoking_status,
+    family=gaussian,
+    complete_cases %>%
+        group_by(smoking_status) %>%
+        sample_n(min(group_size(.)))) %>%
+summary
+```
+
+This shows us highly significant effects. On average, those
+who smoke are 8 years younger than those who are former smokers,
+and those who have never smoked tend to be younger still.
+Given the powerful effect of age on stroke risk, we clearly have
+the potential for smoking status to be a proxy (potentially
+false) risk factor for stroke.
+
+
+It is quite possible that smoking status has
 some predictive power in addition to other features, but
 we have to admit we don't really see any evidence of it
 in this exploration. Given the quantity of samples missing
 a smoking status, we should be far more comfortable dropping
 this feature than dropping the samples with missing smoking
 status.
-
-Could we fill in the missing smoking status values?
-We might certainly expect to mark all children under the age
-of ten as *never smoked* and expect to usually being correct.
-Sadly, we couldn't assume we'd be 100% right here! But at what
-age would we expect people to take up smoking? Can we predict
-smokers from other features?
-
-## Can we model missing smoking_status values?
-
-Model age by smoking (balance for smoking status)
-And can we drive glmnet on this data?
