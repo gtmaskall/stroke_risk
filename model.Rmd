@@ -1,0 +1,212 @@
+---
+title: "Stroke risk prediction"
+author: "Guy Maskall"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(knitr)
+library(glmnet)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Having previously explored the stroke dataset,
+we can now start to do some predictive modelling.
+
+
+```{r read}
+stroke <- read_csv("train_2v.csv") %>%
+    select(-id, -smoking_status, -work_type) %>%
+    filter(complete.cases(.))
+stroke %>% glimpse
+```
+
+## Partition
+
+```{r train_test}
+set.seed(47)
+stroke_train <- stroke %>% 
+    group_by(stroke) %>% 
+    sample_frac(.7)
+stroke_test <- stroke %>% 
+    anti_join(stroke_train)
+```
+
+```{r balanced_train}
+set.seed(470)
+stroke_tr_bal <- stroke_train %>%
+    group_by(stroke) %>%
+    sample_n(min(group_size(.)))
+```
+
+## Models
+
+### Age alone
+
+```{r age_risk_alone}
+age_alone_model <- glm(stroke ~ age, stroke_tr_bal, family=gaussian)
+age_alone_model %>% summary
+```
+
+### All features
+
+### Logistic regression
+
+```{r all_features_risk}
+all_feat_model <- glm(stroke ~ ., stroke_tr_bal, family=gaussian)
+all_feat_model %>% summary
+```
+
+### L1 regularized logistic regression
+
+```{r all_features_L1}
+x_tr <- model.matrix(stroke~., stroke_tr_bal)[, -1]
+y_tr <- stroke_tr_bal$stroke
+all_feat_l1_mod <- cv.glmnet(x_tr, y_tr)
+coef(all_feat_l1_mod)
+```
+
+Using lasso for feature selection, we are left with
+
+* age
+* hypertension
+* heart_disease
+* avg_glucose_level
+
+as predictors.
+
+```{r selected_feats_model}
+selected_feats_mod <- glm(stroke ~ age + 
+                          hypertension + 
+                          heart_disease + 
+                          avg_glucose_level, 
+                      stroke_tr_bal, family=gaussian)
+selected_feats_mod %>% summary
+```
+
+### Model comparison
+
+We have two main models for stroke risk prediction.
+In initial EDA, it was clear that age was a dominant
+factor, and so the first model simply uses that. Age is
+a feature that requires no diagnostic measurement.
+A second model adds a feature denoting whether the patient
+is suffering from hypertension, a feature denoting
+whether they are suffering from heart disease, and 
+their average glucose level measured after a meal.
+The first two of these can be expected to already be
+in a patient's records. The glucose level measurement
+is probably the most awkward additional feature. It also
+appears to be the least significant in the joint model.
+We may subsequently wish to review how difficult it is
+to acquire this for patients and investigate further
+how useful it is in predicting stroke risk.
+
+It is encouraging that body mass index fell out.
+This had a small number of missing values, suggesting it
+may be harder to acquire for some reason. We could
+arguably add those previously omitted records back
+into the dataset. It is also appealing that residence
+type is not included; this would likely be difficult for
+doctors to acquire reliably. That is to say, the classification
+of residence type may be somewhat subjective. 
+
+So now, how do these models perform?
+
+```{r stroke_prevalence}
+stroke_test %>% 
+    count(stroke) %>% 
+    pivot_wider(names_from=stroke, values_from=n) %>% 
+    mutate(stroke_pc = 100*`1`/`0`)
+```
+
+The prevalence of stroke in the test set is the same as in the
+overall dataset, specifically 1.56%.
+
+```{r age_preds}
+age_preds <- predict(age_alone_model, 
+                     newdata=stroke_test, 
+                     type="response") > 0.5
+age_tp <- sum((age_preds == 1) & (stroke_test$stroke == 1))
+age_fp <- sum((age_preds == 1) & (stroke_test$stroke == 0))
+age_fn <- sum((age_preds == 0) & (stroke_test$stroke == 1))
+age_precision <- 100 * age_tp / (age_tp + age_fp)
+age_recall <- 100 * age_tp / (age_tp + age_fn)
+print(c(age_precision, age_recall))
+```
+
+Using the age-only model, we flag `r age_tp + age_fp` individuals,
+or `r round(100 * (age_tp + age_fp) / length(age_preds))`% of the
+population for stroke.
+Of these, `r round(age_precision, 1)`% actually suffered a stroke.
+This is over twice the "hit" rate compared to a random sampling
+of the population, remembering the natural prevalence is 1.56%.
+Of the population who did suffer a stroke, the model picked up
+just over 78% of them. In other words, to pick up 78% of stroke
+victims via random sampling, we'd expect to have to sample
+78% of the population.
+
+This is not bad for a simple model with a single feature. We've
+more than halved the number of people to follow up on whilst
+more than doubling the hit rate.
+
+How does the model with more features perform?
+
+```{r selected_feats_preds}
+selected_feats_preds <- predict(selected_feats_mod, 
+                     newdata=stroke_test, 
+                     type="response") > 0.5
+selected_feats_tp <- sum((selected_feats_preds == 1) & 
+                         (stroke_test$stroke == 1))
+selected_feats_fp <- sum((selected_feats_preds == 1) & 
+                         (stroke_test$stroke == 0))
+selected_feats_fn <- sum((selected_feats_preds == 0) & 
+                         (stroke_test$stroke == 1))
+selected_feats_precision <- 100 * selected_feats_tp / 
+    (selected_feats_tp + selected_feats_fp)
+selected_feats_recall <- 100 * selected_feats_tp / 
+    (selected_feats_tp + selected_feats_fn)
+print(c(selected_feats_precision, selected_feats_recall))
+```
+
+Using the larger model, we flag `r sum(selected_feats_preds)`
+individuals, or `r round(100 * sum(selected_feats_preds) / length(selected_feats_preds))`% of the population.
+Of these, `r round(selected_feats_precision, 1)`% actually suffered 
+a stroke. This is even better than the previous model, whilst
+maintaining a similar recall rate.
+To put it another way, we would target `r sum(age_preds) -
+sum(selected_feats_preds)` fewer people whilst catching
+about the same number of stroke victims.
+
+## Final note
+
+There are many unknowns here, from the origin and sampling strategy
+of the dataset, through to the interpretation of some of the
+features, and the use to which any stroke prediction result might
+be put. With any health intervention, there are costs to consider.
+Are we sending out leaflets here or contacting patients to arrange
+for them to attend their GP practice for tests, or even some
+preventative treatment? These options have very different costs
+and therefore different optimum models.
+
+Health services are inevitably resource constrained, meaning
+a model that flags more alarms than the capacity of the health service
+can handle is of little use. This is frequently a limitation of
+binary classification models in applications where data are noisy
+and uncertain. By adopting a logistic regression model here, we
+naturally deal with probabilities and don't need to adopt the
+threshold of 0.5. Indeed, we don't even need to apply a threshold
+at all. In a resource-constrained health service, we could 
+rank patients by predicted risk and pursue those deemed most at
+risk first.
+
+## Session info
+
+```{r sessioninfo}
+sessionInfo()
+```
+
