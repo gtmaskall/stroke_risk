@@ -7,6 +7,7 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 library(tidyverse)
+library(knitr)
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -276,3 +277,69 @@ in this exploration. Given the quantity of samples missing
 a smoking status, we should be far more comfortable dropping
 this feature than dropping the samples with missing smoking
 status.
+
+## Age and work type
+
+Another set of relationships worth exploring is that of
+age and work type. We naturally dislike features that are
+vague or lack orthogonality. What do we mean by the latter?
+Firstly, the data dictionary defines *work_type*
+as "Type of occupation". What are these types?
+
+```{r work_type_counts}
+stroke %>%
+    count(work_type) %>%
+    kable(caption="Work type counts in dataset")
+```
+
+One of the types is *children*. Does this mean the occupution
+is someone who works with children? Or does it mean the subjects
+themselves are children? We can check this by looking at the
+distribution of age with respect to *work_type*:
+
+```{r work_type_age_density}
+stroke %>% 
+    ggplot(aes(x = age, colour=work_type)) + 
+    geom_density()
+```
+
+The answer now is clear that *children* means the subject is
+a child, not that they work with children. Knowing that work
+type just tells us that the subject is younger than around 18.
+Similarly, the vast bulk of those listed as *never_worked*
+are below the age of 20 or so. To know these work types is to
+essentially know the subject is young and, as we have clearly
+seen in the earlier exploration, age is the dominant risk
+factor. These work types are highly unlikely to contain
+additional predictive power. They are also not orthogonal
+to the other work types. Everyone at age 50, whether they're
+in a government job or the private sector, or self-employed
+was once a child. They may very well have likely also never
+worked before the age of 20.
+
+In this feature, we have both a strong age component and
+also do not have a means to fundamentally distinguish
+separate groups of people. There is further uncertainty
+regarding this feature. Is it what the subject was doing
+at the time of being surveyed? We cannot assume that's the
+only work type they've ever done. The self-employed category 
+is biased towards older age. Why is there no *retired*
+category? Is everyone in this population working until they
+drop?
+
+This feature might be of interest if we better understood
+what it actually meant and if we wanted to, say, understand
+stroke risk for people over 60 and take into account whether
+they still worked, and in what kind of job, or had retired.
+In short, the *work_type* feature seems very much to be
+one that should be held back pending clarification about
+what it's actually measuring.
+
+# Appendix
+
+## Session info
+
+```{r session_info}
+sessionInfo()
+```
+
