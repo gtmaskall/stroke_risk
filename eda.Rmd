@@ -300,7 +300,9 @@ distribution of age with respect to *work_type*:
 ```{r work_type_age_density}
 stroke %>% 
     ggplot(aes(x = age, colour=work_type)) + 
-    geom_density()
+    geom_density() +
+    labs(title = "Age distribution with work_type",
+         subtitle = "full dataset")
 ```
 
 The answer now is clear that *children* means the subject is
