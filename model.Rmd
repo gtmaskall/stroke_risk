@@ -48,7 +48,7 @@ stroke_tr_bal <- stroke_train %>%
 ### Age alone
 
 ```{r age_risk_alone}
-age_alone_model <- glm(stroke ~ age, stroke_tr_bal, family=gaussian)
+age_alone_model <- glm(stroke ~ age, stroke_tr_bal, family=binomial)
 age_alone_model %>% summary
 ```
 
@@ -57,7 +57,7 @@ age_alone_model %>% summary
 ### Logistic regression
 
 ```{r all_features_risk}
-all_feat_model <- glm(stroke ~ ., stroke_tr_bal, family=gaussian)
+all_feat_model <- glm(stroke ~ ., stroke_tr_bal, family=binomial)
 all_feat_model %>% summary
 ```
 
@@ -66,7 +66,7 @@ all_feat_model %>% summary
 ```{r all_features_L1}
 x_tr <- model.matrix(stroke~., stroke_tr_bal)[, -1]
 y_tr <- stroke_tr_bal$stroke
-all_feat_l1_mod <- cv.glmnet(x_tr, y_tr)
+all_feat_l1_mod <- cv.glmnet(x_tr, y_tr, family="binomial")
 coef(all_feat_l1_mod)
 ```
 
@@ -84,7 +84,7 @@ selected_feats_mod <- glm(stroke ~ age +
                           hypertension + 
                           heart_disease + 
                           avg_glucose_level, 
-                      stroke_tr_bal, family=gaussian)
+                      stroke_tr_bal, family=binomial)
 selected_feats_mod %>% summary
 ```
 
@@ -146,13 +146,13 @@ Of these, `r round(age_precision, 1)`% actually suffered a stroke.
 This is over twice the "hit" rate compared to a random sampling
 of the population, remembering the natural prevalence is 1.56%.
 Of the population who did suffer a stroke, the model picked up
-just over 78% of them. In other words, to pick up 78% of stroke
-victims via random sampling, we'd expect to have to sample
-78% of the population.
+just over `r floor(age_recall)`% of them. In other words, to pick up 
+`r floor(age_recall)`% of stroke victims via random sampling, 
+we'd expect to have to sample `r floor(age_recall)`% of the population.
 
 This is not bad for a simple model with a single feature. We've
-more than halved the number of people to follow up on whilst
-more than doubling the hit rate.
+reduced by more than two thirds the number of people to follow up on 
+whilst more than doubling the hit rate.
 
 How does the model with more features perform?
 
@@ -174,7 +174,9 @@ print(c(selected_feats_precision, selected_feats_recall))
 ```
 
 Using the larger model, we flag `r sum(selected_feats_preds)`
-individuals, or `r round(100 * sum(selected_feats_preds) / length(selected_feats_preds))`% of the population.
+individuals, or 
+`r round(100 * sum(selected_feats_preds) / length(selected_feats_preds))`% 
+of the population.
 Of these, `r round(selected_feats_precision, 1)`% actually suffered 
 a stroke. This is even better than the previous model, whilst
 maintaining a similar recall rate.
